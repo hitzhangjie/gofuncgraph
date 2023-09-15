@@ -27,34 +27,21 @@ var usageLong = `gofuncgraph is a bpf(2)-based ftrace(1)-like function graph tra
 here're some tracing examples:
 
 1 trace a specific function in etcd client "go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire"
-
-  gofuncgraph --uprobe-wildcards 'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire' \
-    ./binary \
-    'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire'
+  gofuncgraph --uprobe-wildcards 'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire' ./binary
 
 2 trace all functions in etcd client
-
-  gofuncgraph --uprobe-wildcards 'go.etcd.io/etcd/client/v3/*' \
-    ./binary \
-	'go.etcd.io/etcd/client/v3/*'
+  gofuncgraph --uprobe-wildcards 'go.etcd.io/etcd/client/v3/*' ./binary 
 
 3 trace a specific function and include runtime.chan* builtins
-
-  gofuncgraph --uprobe-wildcards 'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire' \
-    --uprobe-wildcards 'runtime.chan*' \
-	./binary \
-	'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire' \
-	'runtime.chan*'
+  gofuncgraph -u 'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire' -u 'runtime.chan*' ./binary 
 
 4 trace a specific function with some arguemnts
-  gofuncgraph --uprobe-wildcards 'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire(pfx=+0(+8(%ax)):c512, n_pfx=+16(%ax):u64, m.s.id=16(0(%ax)):u64 )' \
-    ./binary \
-	'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire'
+  gofuncgraph -u 'go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire(pfx=+0(+8(%ax)):c512, n_pfx=+16(%ax):u64, m.s.id=16(0(%ax)):u64 )' ./binary
  `
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "gofuncgraph [--uprobe-wildcards [p1,p2,...] |--exclude-vendor|--debug] <binary> [fn1,fn2,...]",
+	Use:   "gofuncgraph [-u wildcards|-x|-d] <binary> [fetch]",
 	Short: usage,
 	Long:  usageLong,
 	PreRunE: func(cmd *cobra.Command, args []string) error {

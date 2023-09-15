@@ -28,10 +28,10 @@ type ArgRule struct {
 	Offset   int64
 }
 
-func parseFetchArgs(fetch map[string]map[string]string) (fetchArgs map[string][]*FetchArg, err error) {
+func parseFetchArgs(funcParams map[string]map[string]string) (fetchArgs map[string][]*FetchArg, err error) {
 	fetchArgs = map[string][]*FetchArg{}
-	for funcname, fet := range fetch {
-		for name, statement := range fet {
+	for funcname, params := range funcParams {
+		for name, statement := range params {
 			fa, err := newFetchArg(name, statement)
 			if err != nil {
 				return nil, err
@@ -78,11 +78,16 @@ func newFetchArg(varname, statement string) (_ *FetchArg, err error) {
 	}
 	targetSize /= 8
 
+	// like pfx=+0(+8(%ax)):u64, let's parse the rules for +0(+8(%ax))
+	// then we'll get 3 rules:
+	// 	```[stackRule +0, stackRule +8, registerRule %ax]```,
+	// and we should reverse the rules, so the final rules will be
+	// ```[registerRule %ax, stackRule +8, stackRule +0]```.
 	rules := []*ArgRule{}
 	buf := []byte{}
 	for i := 0; i < len(parts[0]); i++ {
 		if parts[0][i] == '(' || parts[0][i] == ')' && len(buf) > 0 {
-			op, err := newFetchOp(string(buf))
+			op, err := newFilterOp(string(buf))
 			if err != nil {
 				return nil, err
 			}
@@ -95,7 +100,7 @@ func newFetchArg(varname, statement string) (_ *FetchArg, err error) {
 		}
 	}
 	if len(buf) > 0 {
-		op, err := newFetchOp(string(buf))
+		op, err := newFilterOp(string(buf))
 		if err != nil {
 			return nil, err
 		}
@@ -116,7 +121,7 @@ func newFetchArg(varname, statement string) (_ *FetchArg, err error) {
 	}, nil
 }
 
-func newFetchOp(op string) (_ *ArgRule, err error) {
+func newFilterOp(op string) (_ *ArgRule, err error) {
 	if len(op) != 0 && op[0] == '%' {
 		switch op[1:] {
 		case "ax", "bx", "cx", "dx", "si", "di", "bp", "sp", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15":

@@ -54,7 +54,7 @@ here're some tracing examples:
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "gofuncgraph [flags] <args>",
+	Use:   "gofuncgraph [--uprobe-wildcards [p1,p2,...] |--exclude-vendor|--debug] <binary> [fn1,fn2,...]",
 	Short: usage,
 	Long:  usageLong,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -62,7 +62,7 @@ var rootCmd = &cobra.Command{
 			log.SetLevel(log.DebugLevel)
 		}
 
-		if len(args) < 2 {
+		if len(args) < 1 {
 			fmt.Println(usage)
 			return errors.New("too few args")
 		}
@@ -70,11 +70,11 @@ var rootCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		bin := args[0]
-		binArgs := args[1:]
+		fetch := args[1:]
 		excludeVendor, _ := cmd.Flags().GetBool("exclude-vendor")
 		uprobeWildcards, _ := cmd.Flags().GetStringSlice("uprobe-wildcards")
 
-		tracer, err := NewTracer(bin, excludeVendor, uprobeWildcards, binArgs)
+		tracer, err := NewTracer(bin, excludeVendor, uprobeWildcards, fetch)
 		if err != nil {
 			return err
 		}

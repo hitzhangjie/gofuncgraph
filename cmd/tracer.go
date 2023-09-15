@@ -30,12 +30,14 @@ type Tracer struct {
 	elf             *elf.ELF
 	excludeVendor   bool
 	uprobeWildcards []string
-	args            []string
+	fetch           []string
 
 	bpf *bpf.BPF
 }
 
-func NewTracer(bin string, excludeVendor bool, uprobeWildcards, args []string) (_ *Tracer, err error) {
+// NewTracer create a new tracer for ELF executable `bin`, it attach uprobes listed in `uprobeWildcards`,
+// and output statistics of functions filtered by fetch
+func NewTracer(bin string, excludeVendor bool, uprobeWildcards, fetch []string) (_ *Tracer, err error) {
 	elf, err := elf.New(bin)
 	if err != nil {
 		return
@@ -46,65 +48,76 @@ func NewTracer(bin string, excludeVendor bool, uprobeWildcards, args []string) (
 		elf:             elf,
 		excludeVendor:   excludeVendor,
 		uprobeWildcards: uprobeWildcards,
-		args:            args,
+		fetch:           fetch,
 
 		bpf: bpf.New(),
 	}, nil
 }
 
-func (t *Tracer) ParseArgs(inputs []string) (in []string, fetch map[string]map[string]string, err error) {
-	fetch = map[string]map[string]string{}
-	for _, input := range inputs {
-		if input[len(input)-1] == ')' {
+// Parse parse the args `gofuncgraph [flags] binary <args>`
+//
+// @return out: the function names to output
+// @return fetch: the function name => parameters (parameter name => parameter value)
+// @return err: return err if <args> is invalid
+func (t *Tracer) Parse() (funcs []string, fetchArgs map[string]map[string]string, err error) {
+	fetchArgs = map[string]map[string]string{}
+	for _, s := range t.fetch {
+
+		// see: go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire(pfx=+0(+8(%ax)):c512, n_pfx=+16(%ax):u64, m.s.id=16(0(%ax)):u64 )
+		if s[len(s)-1] == ')' {
 			stack := []byte{')'}
-			for i := len(input) - 2; i >= 0; i-- {
-				if input[i] == ')' {
+			for i := len(s) - 2; i >= 0; i-- {
+				// verifying the balance parenthese of expression ...tryAcquire.(pfx=, n_pfx=, ...)
+				if s[i] == ')' {
 					stack = append(stack, ')')
-				} else if input[i] == '(' {
+				} else if s[i] == '(' {
 					if len(stack) > 0 && stack[len(stack)-1] == ')' {
 						stack = stack[:len(stack)-1]
 					} else {
-						err = fmt.Errorf("imbalanced parenthese: %s", input)
+						err = fmt.Errorf("imbalanced parenthese: %s", s)
 						return
 					}
 				}
 
+				// when stack becomes empty again, then we find the funcname s[:i]
 				if len(stack) == 0 {
-					funcname := input[:i]
-					fetch[funcname] = map[string]string{}
-					for _, part := range strings.Split(input[i+1:len(input)-1], ",") {
+					funcname := s[:i]
+					fetchArgs[funcname] = map[string]string{}
+					// keep parsing the (pfx= , n_pfx= , ...)
+					for _, part := range strings.Split(s[i+1:len(s)-1], ",") {
 						varState := strings.Split(part, "=")
 						if len(varState) != 2 {
 							err = fmt.Errorf("invalid variable statement: %s", varState)
 							return
 						}
-						fetch[funcname][strings.TrimSpace(varState[0])] = strings.TrimSpace(varState[1])
+						fetchArgs[funcname][strings.TrimSpace(varState[0])] = strings.TrimSpace(varState[1])
 					}
-					input = input[:i]
+					// now shrink s to function name
+					s = s[:i]
 					break
 				}
 			}
 			if len(stack) > 0 {
-				err = fmt.Errorf("imbalanced parenthese: %s", input)
+				err = fmt.Errorf("imbalanced parenthese: %s", s)
 				return
 			}
 		}
-
-		in = append(in, input)
+		// see: go.etcd.io/etcd/client/v3/concurrency.(*Mutex).tryAcquire
+		funcs = append(funcs, s)
 	}
 	return
 }
 
 func (t *Tracer) Start() (err error) {
-	in, fetch, err := t.ParseArgs(t.args)
+	funcs, fetchArgs, err := t.Parse()
 	if err != nil {
 		return
 	}
 	uprobes, err := uprobe.Parse(t.elf, &uprobe.ParseOptions{
 		ExcludeVendor:   t.excludeVendor,
 		UprobeWildcards: t.uprobeWildcards,
-		OutputWildcards: in,
-		Fetch:           fetch,
+		FuncNames:       funcs,
+		FetchFuncArgs:   fetchArgs,
 	})
 	if err != nil {
 		return

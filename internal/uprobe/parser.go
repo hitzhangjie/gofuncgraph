@@ -14,12 +14,15 @@ import (
 type ParseOptions struct {
 	ExcludeVendor   bool
 	UprobeWildcards []string
-	OutputWildcards []string
-	Fetch           map[string]map[string]string // funcname: varname: expression
+	FuncNames       []string
+	FetchFuncArgs   map[string]map[string]string // funcname: varname: expression
 }
 
+// Parse parses the wanted function names (and its parameters), and parse DWARF info, ELF info
+// to determine the addresses of all wanted functions' entry and (multiple) return instruction,
+// then build the uprobes that will be attached.
 func Parse(elf *elf.ELF, opts *ParseOptions) (uprobes []Uprobe, err error) {
-	fetchArgs, err := parseFetchArgs(opts.Fetch)
+	filterArgs, err := parseFetchArgs(opts.FetchFuncArgs)
 	if err != nil {
 		return
 	}
@@ -32,27 +35,28 @@ func Parse(elf *elf.ELF, opts *ParseOptions) (uprobes []Uprobe, err error) {
 	wantedFuncs := map[string]interface{}{}
 	attachFuncs := []string{}
 	for _, symbol := range symbols {
-		if debugelf.ST_TYPE(symbol.Info) == debugelf.STT_FUNC {
-			for _, wc := range append(opts.UprobeWildcards, opts.OutputWildcards...) {
-				if MatchWildcard(wc, symbol.Name) {
-					if opts.ExcludeVendor && strings.Contains(symbol.Name, "/vendor/") {
-						continue
-					}
-					attachFuncs = append(attachFuncs, symbol.Name)
-					if len(opts.OutputWildcards) == 0 {
+		if debugelf.ST_TYPE(symbol.Info) != debugelf.STT_FUNC {
+			continue
+		}
+		for _, wc := range append(opts.UprobeWildcards, opts.FuncNames...) {
+			if !MatchWildcard(wc, symbol.Name) {
+				continue
+			}
+			if opts.ExcludeVendor && strings.Contains(symbol.Name, "/vendor/") {
+				continue
+			}
+			attachFuncs = append(attachFuncs, symbol.Name)
+			if len(opts.FuncNames) == 0 {
+				wantedFuncs[symbol.Name] = true
+			} else {
+				for _, wc := range opts.FuncNames {
+					if MatchWildcard(wc, symbol.Name) {
 						wantedFuncs[symbol.Name] = true
-					} else {
-						for _, wc := range opts.OutputWildcards {
-							if MatchWildcard(wc, symbol.Name) {
-								wantedFuncs[symbol.Name] = true
-								break
-							}
-						}
+						break
 					}
-					break
 				}
 			}
-
+			break
 		}
 	}
 
@@ -78,6 +82,8 @@ func Parse(elf *elf.ELF, opts *ParseOptions) (uprobes []Uprobe, err error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// uprobes for function entry
 		entOffset, err := elf.FuncOffset(funcname)
 		if err != nil {
 			return nil, err
@@ -90,10 +96,12 @@ func Parse(elf *elf.ELF, opts *ParseOptions) (uprobes []Uprobe, err error) {
 			Address:   sym.Value,
 			AbsOffset: entOffset,
 			RelOffset: 0,
-			FetchArgs: fetchArgs[funcname],
+			// TODO FetchArgs, 命名为Fetch有什么特殊含义吗？
+			FetchArgs: filterArgs[funcname],
 			Wanted:    wanted,
 		})
 
+		// uprobes for function return (may have multiple return statements)
 		retOffsets, err := elf.FuncRetOffsets(funcname)
 		if err == nil && len(retOffsets) == 0 {
 			err = errors.New("no ret offsets")

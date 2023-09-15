@@ -87,7 +87,8 @@ func (b *BPF) Load(uprobes []uprobe.Uprobe, opts LoadOptions) (err error) {
 			break
 		}
 	}
-	if err = spec.RewriteConstants(map[string]interface{}{"CONFIG": b.BpfConfig(fetchArgs, opts.GoidOffset, opts.GOffset)}); err != nil {
+	cfg := b.BpfConfig(fetchArgs, opts.GoidOffset, opts.GOffset)
+	if err = spec.RewriteConstants(map[string]interface{}{"CONFIG": cfg}); err != nil {
 		return
 	}
 	if err = spec.LoadAndAssign(b.objs, &ebpf.CollectionOptions{

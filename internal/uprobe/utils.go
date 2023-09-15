@@ -1,5 +1,6 @@
 package uprobe
 
+// MatchWildcard check if regex pattern matches string str
 func MatchWildcard(pattern, str string) bool {
 	if len(pattern) == 0 && len(str) == 0 {
 		return true
